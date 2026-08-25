@@ -1,0 +1,11 @@
+{
+  "type": "agent-turn-complete",
+  "thread-id": "00000000-1111-2222-3333-444444444444",
+  "turn-id": "phase0-turn-001",
+  "cwd": "/workspace/example-project",
+  "client": "codex-tui",
+  "input-messages": [
+    "PHASE 0 fixture input"
+  ],
+  "last-assistant-message": "PHASE 0 fixture result"
+}
