@@ -21,6 +21,7 @@ dev = [
 [project.scripts]
 codex-dispatch = "codex_dispatch.main:main"
 codex-dispatch-notify = "codex_dispatch.notify_client:main"
+codex-dispatch-stop-hook = "codex_dispatch.stop_hook_client:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

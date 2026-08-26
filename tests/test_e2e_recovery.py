@@ -40,6 +40,7 @@ class FakeDiscord:
         content: str,
         *,
         nonce: int | None = None,
+        mention_allowed_users: bool = False,
     ) -> int:
         if self.failures_remaining > 0:
             self.failures_remaining -= 1

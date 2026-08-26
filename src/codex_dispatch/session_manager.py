@@ -20,6 +20,15 @@ _NAME_WHITESPACE = re.compile(r"\s+")
 class DiscordThreadCreator(Protocol):
     async def create_thread(self, parent_channel_id: int, name: str) -> int: ...
 
+    async def send_text(
+        self,
+        channel_id: int,
+        content: str,
+        *,
+        nonce: int | None = None,
+        mention_allowed_users: bool = False,
+    ) -> int: ...
+
 
 class SessionManager:
     """Register Codex notify events and ensure durable Discord thread mappings."""
@@ -64,6 +73,7 @@ class SessionManager:
         """
 
         registration = self._database.register_notify(event)
+        new_mapping = False
         lock = await self._session_lock(event.thread_id)
         async with lock:
             session = self._database.get_session(event.thread_id)
@@ -78,6 +88,7 @@ class SessionManager:
                     event.thread_id,
                     discord_thread_id,
                 )
+                new_mapping = True
                 LOGGER.info(
                     "session.discord_thread_created thread_id=%s discord_thread_id=%s "
                     "workspace_id=%s",
@@ -86,7 +97,30 @@ class SessionManager:
                     session.workspace_id,
                 )
 
-        if registration.event_inserted:
+        if registration.event_inserted or new_mapping:
+            persisted_session = self._database.get_session(event.thread_id)
+            if persisted_session is not None and persisted_session.discord_thread_id is not None:
+                alert_text = (
+                    "🧵 새 Codex 세션 완료"
+                    if registration.session_created or new_mapping
+                    else "✅ Codex 작업 완료"
+                )
+                try:
+                    await self._discord.send_text(
+                        self._control_channel_id,
+                        f"{alert_text}: <#{persisted_session.discord_thread_id}>",
+                        mention_allowed_users=True,
+                    )
+                except Exception as exc:
+                    # The durable mapping and in-thread completion delivery are
+                    # authoritative. Parent-channel mentions are best-effort UX.
+                    LOGGER.warning(
+                        "session.discord_completion_alert_failed thread_id=%s "
+                        "discord_thread_id=%s error_type=%s",
+                        event.thread_id,
+                        persisted_session.discord_thread_id,
+                        type(exc).__name__,
+                    )
             LOGGER.info(
                 "session.notify_persisted thread_id=%s turn_id=%s session_created=%s",
                 event.thread_id,

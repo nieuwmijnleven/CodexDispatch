@@ -185,6 +185,40 @@ class DiscordAdapterAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent, ["hello"])
         client.fetch_channel.assert_not_awaited()
 
+    async def test_send_text_mentions_only_configured_users_for_alerts(self) -> None:
+        channel = SimpleNamespace(
+            id=200,
+            parent_id=None,
+            parent=None,
+            guild=SimpleNamespace(id=100),
+            send=AsyncMock(return_value=SimpleNamespace(id=8003)),
+        )
+        client = SimpleNamespace(
+            is_closed=lambda: False,
+            get_channel=lambda channel_id: channel,
+            fetch_channel=AsyncMock(),
+        )
+        adapter = DiscordAdapter(settings(), AsyncMock())
+        adapter._client = client
+        discord_stub = SimpleNamespace(
+            AllowedMentions=lambda **kwargs: SimpleNamespace(**kwargs),
+        )
+        with patch.object(adapter, "_load_discord", return_value=discord_stub):
+            message_id = await adapter.send_text(
+                200,
+                "done @everyone <@&999>",
+                mention_allowed_users=True,
+            )
+
+        self.assertEqual(message_id, 8003)
+        args, kwargs = channel.send.await_args
+        self.assertEqual(args, ("<@300> done @everyone <@&999>",))
+        mentions = kwargs["allowed_mentions"]
+        self.assertTrue(mentions.users)
+        self.assertFalse(mentions.roles)
+        self.assertFalse(mentions.everyone)
+        self.assertFalse(mentions.replied_user)
+
     async def test_send_text_fetches_uncached_channel(self) -> None:
         channel = SimpleNamespace(
             id=200,

@@ -417,14 +417,27 @@ class DiscordAdapter:
         content: str,
         *,
         nonce: int | None = None,
+        mention_allowed_users: bool = False,
     ) -> int:
-        """Send plain text and return the confirmed Discord message snowflake."""
+        """Send text and return the confirmed Discord message snowflake.
+
+        Normal bot output suppresses all mentions. Completion alerts may explicitly
+        mention only the configured user allowlist so Discord can surface a personal
+        notification without allowing arbitrary mention injection from model output.
+        """
 
         if channel_id <= 0:
             raise ValueError("channel_id must be a positive Discord snowflake")
         text = content.strip()
         if not text:
             raise ValueError("Discord message content must not be empty")
+        if mention_allowed_users:
+            mentions = " ".join(
+                f"<@{user_id}>"
+                for user_id in sorted(self._settings.discord_allowed_user_ids)
+            )
+            if mentions:
+                text = f"{mentions} {text}"
         if len(text) > DISCORD_MESSAGE_LIMIT:
             raise ValueError(
                 f"Discord message content exceeds {DISCORD_MESSAGE_LIMIT} characters"
@@ -450,7 +463,18 @@ class DiscordAdapter:
             )
         if nonce is not None and nonce <= 0:
             raise ValueError("nonce must be a positive integer")
-        message = await send(text, nonce=nonce) if nonce is not None else await send(text)
+        send_kwargs: dict[str, Any] = {}
+        if nonce is not None:
+            send_kwargs["nonce"] = nonce
+        if mention_allowed_users:
+            discord = self._load_discord()
+            send_kwargs["allowed_mentions"] = discord.AllowedMentions(
+                everyone=False,
+                users=True,
+                roles=False,
+                replied_user=False,
+            )
+        message = await send(text, **send_kwargs)
         message_id = _snowflake(getattr(message, "id", None))
         if message_id is None:
             raise DiscordAdapterError("Discord send returned an invalid message id")

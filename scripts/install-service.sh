@@ -152,6 +152,27 @@ render_template() {
   done < "$source"
 }
 
+replace_main_env_key() {
+  local key="$1"
+  local value="$2"
+  local tmp line found=0
+  tmp="$(mktemp)"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      "$key="*)
+        printf '%s=%s\n' "$key" "$value" >> "$tmp"
+        found=1
+        ;;
+      *) printf '%s\n' "$line" >> "$tmp" ;;
+    esac
+  done < "$ENV_FILE"
+  if [[ "$found" -eq 0 ]]; then
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  fi
+  install -m 0640 -o root -g "$SERVICE_GROUP" "$tmp" "$ENV_FILE"
+  rm -f "$tmp"
+}
+
 print_summary() {
   cat <<EOF
 Codex Dispatch service installation
@@ -177,6 +198,13 @@ fi
 
 if [[ "$EUID" -ne 0 ]]; then
   echo "ERROR: installation requires root; run through sudo" >&2
+  exit 77
+fi
+
+if ! runuser -u "$SERVICE_USER" -- test -w "$PROJECT_DIR/src"; then
+  echo "ERROR: $SERVICE_USER cannot write $PROJECT_DIR/src, which is required for the editable package install." >&2
+  echo "Fix the checkout ownership before retrying, for example:" >&2
+  echo "  chown -R $SERVICE_USER:$SERVICE_GROUP $PROJECT_DIR" >&2
   exit 77
 fi
 
@@ -207,6 +235,12 @@ else
   chmod 0640 "$ENV_FILE"
   echo "Preserved existing $ENV_FILE"
 fi
+
+# The selected Codex executable is part of the non-secret deployment contract.
+# Refresh it on every install/upgrade so a previous VS Code/npm/standalone path
+# cannot remain stale after --codex-bin changes.
+replace_main_env_key CODEX_DISPATCH_CODEX_BIN "$CODEX_BIN"
+echo "Updated CODEX_DISPATCH_CODEX_BIN in $ENV_FILE"
 
 if [[ ! -e "$NOTIFY_ENV_FILE" ]]; then
   render_template "$NOTIFY_ENV_TEMPLATE" > "$tmp_notify_env"
@@ -254,7 +288,18 @@ install -m 0644 -o root -g root "$tmp_meta" "$INSTALL_META"
 if [[ ! -x "$VENV_PYTHON" ]]; then
   runuser -u "$SERVICE_USER" -- "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
-runuser -u "$SERVICE_USER" -- "$VENV_DIR/bin/pip" install -e "$PROJECT_DIR"
+
+# A partially-created venv can have a working Python executable but no pip
+# module/launcher (for example, after an interrupted install). Validate pip
+# explicitly and repair it with ensurepip before installing the project.
+if ! runuser -u "$SERVICE_USER" -- "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
+  echo "Virtual environment is missing pip; repairing it with ensurepip."
+  if ! runuser -u "$SERVICE_USER" -- "$VENV_PYTHON" -m ensurepip --upgrade; then
+    echo "ERROR: cannot bootstrap pip in $VENV_DIR; ensure Python venv/ensurepip support is installed" >&2
+    exit 2
+  fi
+fi
+runuser -u "$SERVICE_USER" -- "$VENV_PYTHON" -m pip install -e "$PROJECT_DIR"
 
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"

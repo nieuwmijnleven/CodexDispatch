@@ -54,6 +54,11 @@ class SessionManagerTests(unittest.IsolatedAsyncioTestCase):
             200,
             "creator-alliance / abcdefgh",
         )
+        self.discord.send_text.assert_awaited_once_with(
+            200,
+            "🧵 새 Codex 세션 완료: <#7001>",
+            mention_allowed_users=True,
+        )
 
     async def test_duplicate_notify_does_not_create_second_thread(self) -> None:
         first = event(self.workspace, thread_id="session-1", turn_id="turn-1")
@@ -62,6 +67,7 @@ class SessionManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(second.event_inserted)
         self.assertEqual(self.discord.create_thread.await_count, 1)
+        self.assertEqual(self.discord.send_text.await_count, 1)
         self.assertEqual(self.db.notify_event_count(), 1)
 
     async def test_next_turn_reuses_existing_discord_thread(self) -> None:
@@ -75,6 +81,12 @@ class SessionManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(second.session_created)
         self.assertEqual(second.session.discord_thread_id, 7001)
         self.assertEqual(self.discord.create_thread.await_count, 1)
+        self.assertEqual(self.discord.send_text.await_count, 2)
+        self.discord.send_text.assert_awaited_with(
+            200,
+            "✅ Codex 작업 완료: <#7001>",
+            mention_allowed_users=True,
+        )
         self.assertEqual(self.db.notify_event_count(), 2)
 
     async def test_three_sessions_receive_three_distinct_threads(self) -> None:
@@ -89,6 +101,7 @@ class SessionManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.db.session_count(), 3)
         self.assertEqual(self.discord.create_thread.await_count, 3)
+        self.assertEqual(self.discord.send_text.await_count, 3)
         mapped = {
             self.db.get_session(f"session-{index}").discord_thread_id  # type: ignore[union-attr]
             for index in range(3)
@@ -115,6 +128,7 @@ class SessionManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(registration.event_inserted)
         self.assertEqual(registration.session.discord_thread_id, 7001)
         discord_after_restart.create_thread.assert_not_awaited()
+        discord_after_restart.send_text.assert_not_awaited()
 
     async def test_failed_thread_creation_leaves_session_unmapped_for_retry(self) -> None:
         failing_discord = AsyncMock()
@@ -137,6 +151,23 @@ class SessionManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(registration.event_inserted)
         self.assertEqual(registration.session.discord_thread_id, 7555)
         retry_discord.create_thread.assert_awaited_once()
+        retry_discord.send_text.assert_awaited_once_with(
+            200,
+            "🧵 새 Codex 세션 완료: <#7555>",
+            mention_allowed_users=True,
+        )
+
+    async def test_parent_completion_alert_failure_does_not_break_mapping(self) -> None:
+        self.discord.send_text.side_effect = RuntimeError("parent channel unavailable")
+
+        registration = await self.manager.handle_notify(
+            event(self.workspace, thread_id="session-1", turn_id="turn-1")
+        )
+
+        self.assertEqual(registration.session.discord_thread_id, 7001)
+        self.assertEqual(self.db.notify_event_count(), 1)
+        self.discord.create_thread.assert_awaited_once()
+        self.discord.send_text.assert_awaited_once()
 
     async def test_lookup_by_discord_thread(self) -> None:
         await self.manager.handle_notify(

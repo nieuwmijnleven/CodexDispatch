@@ -94,7 +94,16 @@ Bot token은 repository, systemd unit, service-user-readable config에 저장하
 
 ## 3. 환경 설정
 
-설치 후 non-secret 설정과 secret을 분리해 채운다.
+설치 후 non-secret 설정과 secret을 분리해 채운다. 프로젝트의 local `.env`에 이미 `CODEX_ALLOWED_ROOTS`와 Discord 설정을 준비했다면, allowlist parser를 사용해 필요한 키만 안전하게 가져올 수 있다. 이 helper는 `.env`를 `source`하거나 실행하지 않고 Bot token을 출력하지 않는다.
+
+```bash
+cd /home/<codex-user>/codex-dispatch
+sudo bash scripts/configure-service-from-env.sh \
+  --user <codex-user> \
+  --env-file .env
+```
+
+수동 편집도 가능하다.
 
 ```bash
 sudoedit /etc/codex-dispatch/codex-dispatch.env

@@ -1,11 +1,13 @@
-# Codex Notify Bridge
+# Codex Completion Bridge
 
-PHASE 3 introduces a local Unix Domain Socket bridge between Codex CLI's external `notify` callback and the long-running Codex Dispatch orchestrator.
+PHASE 3 introduces a local Unix Domain Socket bridge between Codex CLI completion events and the long-running Codex Dispatch orchestrator.
+
+The deployed Codex 0.149.1 baseline uses the top-level `notify = [...]` callback as the primary completion source. Codex Dispatch also includes an optional `Stop` lifecycle-hook adapter as a fallback for environments where the legacy callback is unavailable. Both normalize to the same internal `agent-turn-complete` event and persistent deduplication key, so enabling both is safe.
 
 ## Flow
 
 ```text
-Codex CLI
+Codex CLI TUI
   |
   | external notify JSON
   v
@@ -19,6 +21,8 @@ NotifyServer
   v
 Codex Dispatch orchestrator
 ```
+
+The optional Stop-hook fallback reaches the same `NotifyServer` through `codex_dispatch.stop_hook_client`.
 
 The bridge is intentionally local-only. It opens no TCP port.
 
@@ -51,7 +55,22 @@ The socket parent directory must be owned by the Codex Dispatch service user and
 
 ## Codex configuration
 
-For a source checkout, configure Codex external notify to invoke:
+### Optional fallback: Stop hook
+
+Install the global Stop hook as the same Linux user that runs Codex:
+
+```bash
+cd /home/your-user/codex-dispatch
+python3 scripts/configure-codex-stop-hook.py
+```
+
+The helper merges one command into `~/.codex/hooks.json` without deleting unrelated hooks. Restart any already-running Codex TUI after changing hooks. Codex requires non-managed command hooks to be reviewed/trusted before they execute; review the displayed hook command and trust it only if it points at this checkout's `.venv/bin/python -m codex_dispatch.stop_hook_client`.
+
+The Stop hook supplies `session_id`, `turn_id`, `cwd`, and `last_assistant_message`. The adapter maps these to the existing internal completion protocol as `thread-id`, `turn-id`, `cwd`, and `last-assistant-message` respectively. It returns no blocking hook output, so it does not request an additional model turn.
+
+### Primary external notify
+
+For the deployed Codex 0.149.1 baseline, configure Codex external notify to invoke:
 
 ```toml
 notify = [

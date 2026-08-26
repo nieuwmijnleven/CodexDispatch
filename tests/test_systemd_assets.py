@@ -5,6 +5,7 @@ from pathlib import Path
 import pwd
 import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -70,9 +71,29 @@ class SystemdAssetTests(unittest.TestCase):
         self.assertIn('chmod 0640 "$NOTIFY_ENV_FILE"', text)
         self.assertIn('chmod 0600 "$SECRET_ENV_FILE"', text)
 
+    def test_installer_refreshes_selected_codex_binary_in_existing_main_env(self) -> None:
+        text = (ROOT / "scripts/install-service.sh").read_text(encoding="utf-8")
+        self.assertIn('replace_main_env_key CODEX_DISPATCH_CODEX_BIN "$CODEX_BIN"', text)
+        self.assertIn('Updated CODEX_DISPATCH_CODEX_BIN in $ENV_FILE', text)
+
+    def test_installer_repairs_partial_venv_without_pip_launcher(self) -> None:
+        text = (ROOT / "scripts/install-service.sh").read_text(encoding="utf-8")
+        self.assertIn('"$VENV_PYTHON" -m pip --version', text)
+        self.assertIn('"$VENV_PYTHON" -m ensurepip --upgrade', text)
+        self.assertIn('"$VENV_PYTHON" -m pip install -e "$PROJECT_DIR"', text)
+
+    def test_installer_fails_early_when_service_user_cannot_write_checkout(self) -> None:
+        text = (ROOT / "scripts/install-service.sh").read_text(encoding="utf-8")
+        self.assertIn('runuser -u "$SERVICE_USER" -- test -w "$PROJECT_DIR/src"', text)
+        self.assertIn('cannot write $PROJECT_DIR/src', text)
+        self.assertIn('chown -R $SERVICE_USER:$SERVICE_GROUP $PROJECT_DIR', text)
+        self.assertNotIn('"$VENV_DIR/bin/pip" install -e "$PROJECT_DIR"', text)
+
     def test_shell_scripts_parse_with_bash(self) -> None:
         for relative in (
             "scripts/install-service.sh",
+            "scripts/configure-service-from-env.sh",
+            "scripts/configure-codex-notify.sh",
             "scripts/upgrade-service.sh",
             "scripts/uninstall-service.sh",
         ):
@@ -84,6 +105,41 @@ class SystemdAssetTests(unittest.TestCase):
                     stderr=subprocess.PIPE,
                     text=True,
                 )
+
+    def test_env_importer_is_allowlisted_and_does_not_source_secret_file(self) -> None:
+        text = (ROOT / "scripts/configure-service-from-env.sh").read_text(encoding="utf-8")
+        for key in (
+            "CODEX_ALLOWED_ROOTS",
+            "DISCORD_CONTROL_CHANNEL_ID",
+            "DISCORD_ALLOWED_GUILD_IDS",
+            "DISCORD_ALLOWED_CHANNEL_IDS",
+            "DISCORD_ALLOWED_USER_IDS",
+            "DISCORD_BOT_TOKEN",
+        ):
+            self.assertIn(key, text)
+        self.assertNotIn("source \"$SOURCE_ENV\"", text)
+        self.assertNotIn(". \"$SOURCE_ENV\"", text)
+        self.assertIn('install -m 0600 -o root -g root "$secret_tmp" "$SECRET_ENV"', text)
+        self.assertIn("No secret values were printed.", text)
+
+    def test_codex_notify_configurator_is_idempotent_and_top_level(self) -> None:
+        if os.geteuid() == 0:
+            self.skipTest("notify configurator intentionally rejects root")
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.toml"
+            config.write_text('model = "test"\n\n[projects."/tmp"]\ntrust_level = "trusted"\n', encoding="utf-8")
+            env = dict(os.environ)
+            env["CODEX_CONFIG_FILE"] = str(config)
+            command = ["bash", str(ROOT / "scripts/configure-codex-notify.sh")]
+            first = subprocess.run(command, env=env, check=True, capture_output=True, text=True)
+            second = subprocess.run(command, env=env, check=True, capture_output=True, text=True)
+            text = config.read_text(encoding="utf-8")
+            notify_pos = text.index("notify = [")
+            table_pos = text.index('[projects."/tmp"]')
+            self.assertLess(notify_pos, table_pos)
+            self.assertEqual(text.count("notify = ["), 1)
+            self.assertIn("Codex notify configuration: PASS", first.stdout)
+            self.assertIn("already configured", second.stdout)
 
     def test_installer_dry_run_requires_no_root_mutation(self) -> None:
         current = pwd.getpwuid(os.getuid()).pw_name
