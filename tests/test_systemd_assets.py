@@ -23,7 +23,7 @@ class SystemdAssetTests(unittest.TestCase):
             "EnvironmentFile=/etc/codex-dispatch/notify.env",
             "EnvironmentFile=/etc/codex-dispatch/secret.env",
             "ExecStart=@VENV_PYTHON@ -m codex_dispatch",
-            "Restart=on-failure",
+            "Restart=always",
             "KillSignal=SIGTERM",
             "KillMode=mixed",
             "RuntimeDirectory=codex-dispatch",
@@ -88,6 +88,13 @@ class SystemdAssetTests(unittest.TestCase):
         self.assertIn('cannot write $PROJECT_DIR/src', text)
         self.assertIn('chown -R $SERVICE_USER:$SERVICE_GROUP $PROJECT_DIR', text)
         self.assertNotIn('"$VENV_DIR/bin/pip" install -e "$PROJECT_DIR"', text)
+
+    def test_upgrade_restores_previously_active_service_on_install_failure(self) -> None:
+        text = (ROOT / "scripts/upgrade-service.sh").read_text(encoding="utf-8")
+        self.assertIn('if [[ "$was_active" -eq 1 ]]; then', text)
+        self.assertIn('if systemctl start "$SERVICE_NAME"; then', text)
+        self.assertIn("previously active service was restored", text)
+        self.assertNotIn("upgrade failed; service remains stopped", text)
 
     def test_shell_scripts_parse_with_bash(self) -> None:
         for relative in (

@@ -17,7 +17,7 @@ EnvironmentFile=/etc/codex-dispatch/secret.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=@VENV_PYTHON@ -m codex_dispatch
 
-Restart=on-failure
+Restart=always
 RestartSec=5s
 TimeoutStopSec=45s
 KillSignal=SIGTERM

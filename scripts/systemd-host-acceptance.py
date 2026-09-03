@@ -144,7 +144,7 @@ def main() -> int:
         ("enabled", enabled),
         ("active", active),
         ("non_root_user", bool(service_user) and service_user != "root"),
-        ("restart_on_failure", properties.get("Restart") == "on-failure"),
+        ("restart_always", properties.get("Restart") == "always"),
         ("kill_mode_mixed", properties.get("KillMode") == "mixed"),
         ("config_env_mode_0640", mode(env_file) == 0o640),
         ("notify_env_mode_0640", mode(notify_env_file) == 0o640),

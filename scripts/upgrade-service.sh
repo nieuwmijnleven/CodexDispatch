@@ -41,7 +41,15 @@ if ! bash "$PROJECT_DIR/scripts/install-service.sh" \
   --user "$SERVICE_USER" \
   --python "$PYTHON_BIN" \
   --codex-bin "$CODEX_BIN"; then
-  echo "ERROR: upgrade failed; service remains stopped" >&2
+  if [[ "$was_active" -eq 1 ]]; then
+    if systemctl start "$SERVICE_NAME"; then
+      echo "WARNING: upgrade failed; previously active service was restored" >&2
+    else
+      echo "ERROR: upgrade failed and service recovery also failed" >&2
+    fi
+  else
+    echo "ERROR: upgrade failed; service was not active before upgrade" >&2
+  fi
   exit 1
 fi
 

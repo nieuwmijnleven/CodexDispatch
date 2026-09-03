@@ -199,7 +199,7 @@ unit의 핵심 정책:
 
 ```text
 User=<codex-user>
-Restart=on-failure
+Restart=always
 RestartSec=5s
 KillSignal=SIGTERM
 KillMode=mixed
@@ -229,6 +229,8 @@ WantedBy=multi-user.target
 
 `TimeoutStopSec` 안에 끝나지 않는 잔여 process는 systemd가 정리한다.
 
+`Restart=always`는 예상치 못한 SIGTERM/SIGINT나 정상 exit가 service를 장시간 내려둔 채 남기지 않도록 한다. 관리자가 명시적으로 `systemctl stop codex-dispatch.service`를 실행한 경우에는 systemd가 의도된 stop으로 처리하므로 자동 재시작하지 않는다.
+
 ---
 
 ## 7. Restart acceptance
@@ -247,7 +249,7 @@ sudo PYTHONPATH=src python3 scripts/systemd-host-acceptance.py \
 - service enabled
 - service active
 - root가 아닌 service user
-- `Restart=on-failure`
+- `Restart=always`
 - `KillMode=mixed`
 - environment file 권한
 - runtime directory `0700`
@@ -309,7 +311,7 @@ upgrade script는 설치 시 기록한 `/etc/codex-dispatch/install.conf`를 사
 
 순서로 진행한다.
 
-기존 `/etc/codex-dispatch/codex-dispatch.env`와 SQLite state는 보존된다.
+기존 `/etc/codex-dispatch/codex-dispatch.env`와 SQLite state는 보존된다. 재설치 단계가 실패하더라도 업그레이드 시작 전에 service가 active였다면 upgrade script가 service 재시작을 시도해 장시간 stopped 상태로 남는 것을 방지한다.
 
 업그레이드 후:
 

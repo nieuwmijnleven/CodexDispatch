@@ -682,7 +682,7 @@ User=<codex-user>
 WorkingDirectory=/home/<user>/codex-dispatch
 EnvironmentFile=/etc/codex-dispatch/codex-dispatch.env
 ExecStart=/home/<user>/codex-dispatch/.venv/bin/python -m codex_dispatch.main
-Restart=on-failure
+Restart=always
 RestartSec=3
 
 [Install]
@@ -1194,7 +1194,7 @@ docs/systemd-operations.md
 tests/test_systemd_assets.py
 ```
 
-systemd는 Codex 인증/session을 소유한 일반 사용자로 실행하고 `RuntimeDirectory=codex-dispatch`, `StateDirectory=codex-dispatch`, `Restart=on-failure`, `KillMode=mixed`, `TimeoutStopSec=45s`를 사용한다. SIGTERM 수신 시 Discord 입력을 먼저 닫고 background/Managed 작업, notify socket, DB를 순서대로 정리한다. PHASE 11 hardening 이후 config는 non-secret main env, non-secret `notify.env`, root-only `secret.env`로 분리한다. interactive notify bridge는 `/etc/codex-dispatch/notify.env`의 세 notify 키만 비실행 방식으로 읽어 systemd socket과 일치시키며 Discord token에는 접근하지 않는다.
+systemd는 Codex 인증/session을 소유한 일반 사용자로 실행하고 `RuntimeDirectory=codex-dispatch`, `StateDirectory=codex-dispatch`, `Restart=always`, `KillMode=mixed`, `TimeoutStopSec=45s`를 사용한다. SIGTERM 수신 시 Discord 입력을 먼저 닫고 background/Managed 작업, notify socket, DB를 순서대로 정리한다. PHASE 11 hardening 이후 config는 non-secret main env, non-secret `notify.env`, root-only `secret.env`로 분리한다. interactive notify bridge는 `/etc/codex-dispatch/notify.env`의 세 notify 키만 비실행 방식으로 읽어 systemd socket과 일치시키며 Discord token에는 접근하지 않는다.
 
 ### 완료 조건
 
